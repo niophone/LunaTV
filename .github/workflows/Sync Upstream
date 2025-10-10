@@ -1,24 +1,47 @@
-name: Sync Upstream
+name: Upstream Sync
+
 on:
   schedule:
-    - cron: '11 */6 * * *'  
-  workflow_dispatch:  
+    - cron: '11 */6 * * *' # 每1小时执行一次
+  workflow_dispatch:       # 支持手动触发
+
+permissions:
+  contents: write
+  actions: write
+
 jobs:
-  sync:
+  sync_latest_from_upstream:
+    name: Sync latest commits from upstream repo
     runs-on: ubuntu-latest
+    if: ${{ github.event.repository.fork }} # 仅在 fork 仓库运行
+
     steps:
-      - name: Checkout Fork
+      # Step 1: 检出 fork 仓库
+      - name: Checkout target repo
         uses: actions/checkout@v4
+
+      # Step 2: 执行同步
+      - name: Sync upstream changes
+        id: sync
+        uses: aormsby/Fork-Sync-With-Upstream-action@v3.4.1
         with:
-          fetch-depth: 0 
+          upstream_sync_repo: SzeMeng76/LunaTV   # 上游仓库
+          upstream_sync_branch: main             # 上游分支
+          target_sync_branch: main               # fork 仓库分支
+          target_repo_token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Add Upstream Remote
+      # Step 3: 失败检查
+      - name: Sync check
+        if: failure()
         run: |
-          git remote add upstream https://github.com/SzeMeng76/LunaTV.git
-          git fetch upstream
+          echo "[Error] Upstream workflow changed, GitHub suspended auto update. Please manually sync your fork."
+          exit 1
 
-      - name: Merge Upstream Changes
-        run: |
-          git checkout main
-          git merge upstream/main
-          git push origin main
+      # Step 4: 删除旧 workflow runs（仅保留最近2个）
+      - name: Delete workflow runs
+        uses: Mattraks/delete-workflow-runs@main
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          retain_days: 0
+          keep_minimum_runs: 2
